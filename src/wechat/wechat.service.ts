@@ -35,34 +35,64 @@ export class WechatService {
   async processHtml(html: string): Promise<string> {
     const $ = cheerio.load(html);
     const imgTags = $('img');
+    const styleTags = $('[style]'); // 查找含 style 属性的标签
 
-    await Promise.all(
-      imgTags
-        .map(async (i, img) => {
-          const src = $(img).attr('src');
-          if (!src || !/^https?:\/\//.test(src)) return;
+    // 工具函数：下载图片并返回新的本地 URL
+    const downloadAndReplace = async (url: string): Promise<string | null> => {
+      try {
+        const ext = path.extname(url.split('?')[0]) || '.jpg';
+        const id = uuidv4();
+        const filename = id + ext;
+        const filePath = path.join(this.imageDir, filename);
+        const fileUrl = `${this.baseConfig.domain}/images/${filename}`;
 
-          try {
-            const ext = path.extname(src).split('?')[0] || '.jpg';
-            const id = uuidv4();
-            const filename = id + ext;
-            const filePath = path.join(this.imageDir, filename);
-            const fileUrl = `${this.baseConfig.domain}/images/${filename}`;
+        const response = await axios.get(url, { responseType: 'arraybuffer' });
+        fs.writeFileSync(filePath, response.data);
 
-            const response = await axios.get(src, {
-              responseType: 'arraybuffer',
-            });
-            fs.writeFileSync(filePath, response.data);
+        return fileUrl;
+      } catch (error) {
+        console.warn(`Failed to download: ${url}`, error.message);
+        return null;
+      }
+    };
 
-            $(img).attr('src', fileUrl);
-          } catch (error) {
-            console.warn(`Failed to download image: ${src}`, error.message);
+    // 处理 <img src="...">
+    const imgTasks = imgTags
+      .map(async (i, img) => {
+        const src = $(img).attr('src');
+        if (!src || !/^https?:\/\//.test(src)) return;
+
+        const newUrl = await downloadAndReplace(src);
+        if (newUrl) $(img).attr('src', newUrl);
+      })
+      .get();
+
+    // 处理 style="background-image: url(...)"
+    const styleTasks = styleTags
+      .map(async (i, el) => {
+        const style = $(el).attr('style');
+        if (!style) return;
+
+        // 查找所有 background url(...) 的链接
+        const urlRegex = /url\(["']?(https?:\/\/[^"')]+)["']?\)/g;
+        const matches = [...style.matchAll(urlRegex)];
+
+        let newStyle = style;
+        for (const match of matches) {
+          const originalUrl = match[1];
+          const newUrl = await downloadAndReplace(originalUrl);
+          if (newUrl) {
+            newStyle = newStyle.replace(originalUrl, newUrl);
           }
-        })
-        .get(),
-    ); // .get() converts cheerio result to array
+        }
 
-    return $('body').html() as string;
+        $(el).attr('style', newStyle);
+      })
+      .get();
+
+    await Promise.all([...imgTasks, ...styleTasks]);
+
+    return $('body').html() || '';
   }
 
   // 获取 access_token，自动缓存
