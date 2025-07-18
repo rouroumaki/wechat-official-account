@@ -62,7 +62,7 @@ export class WechatService {
         .get(),
     ); // .get() converts cheerio result to array
 
-    return $.html();
+    return $('body').html() as string;
   }
 
   // 获取 access_token，自动缓存
