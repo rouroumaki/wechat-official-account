@@ -90,7 +90,46 @@ export class WechatService {
       })
       .get();
 
-    await Promise.all([...imgTasks, ...styleTasks]);
+    const iframeTags = $('iframe.video_iframe');
+
+    const iframeTasks = iframeTags
+      .map(async (i, el) => {
+        const $el = $(el);
+        const coverEncoded = $el.attr('data-cover');
+        const videoUrl = $el.attr('src');
+        if (!coverEncoded || !videoUrl) return;
+
+        const coverDecoded = decodeURIComponent(coverEncoded);
+        const ext = path.extname(coverDecoded.split('?')[0]) || '.jpg';
+        const filename = uuidv4() + ext;
+        const localFilePath = path.join(this.imageDir, filename);
+        const publicUrl = `${this.baseConfig.domain}/images/${filename}`;
+
+        try {
+          const response = await axios.get(coverDecoded, {
+            responseType: 'arraybuffer',
+          });
+          fs.writeFileSync(localFilePath, response.data);
+
+          // 构建 <a><img></a>
+          const anchorHtml = `
+            <a href="${videoUrl}" target="_blank" rel="noopener noreferrer">
+              <img src="${publicUrl}" style="width:100%; border-radius: 4px;" />
+            </a>
+          `;
+
+          $el.replaceWith(anchorHtml);
+        } catch (err) {
+          console.warn(`⚠️ 封面下载失败: ${coverDecoded}`, err.message);
+          // 失败就保留原 iframe
+        }
+      })
+      .get();
+
+    await Promise.all([...imgTasks, ...styleTasks, ...iframeTasks]);
+
+    const tagsToRemove = ['mp-common-videosnap', 'iframe'];
+    tagsToRemove.forEach((tag) => $(tag).remove());
 
     return $('body').html() || '';
   }
