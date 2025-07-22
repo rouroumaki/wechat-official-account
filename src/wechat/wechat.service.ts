@@ -38,9 +38,15 @@ export class WechatService {
     const styleTags = $('[style]'); // 查找含 style 属性的标签
 
     // 工具函数：下载图片并返回新的本地 URL
-    const downloadAndReplace = async (url: string): Promise<string | null> => {
+    const downloadAndReplace = async (
+      url: string,
+      dataType?: string,
+    ): Promise<string | null> => {
       try {
-        const ext = path.extname(url.split('?')[0]) || '.jpg';
+        let ext = path.extname(url.split('?')[0]) || '.jpg';
+        if (dataType === 'svg') {
+          ext = '.svg';
+        }
         const id = uuidv4();
         const filename = id + ext;
         const filePath = path.join(this.imageDir, filename);
@@ -60,9 +66,10 @@ export class WechatService {
     const imgTasks = imgTags
       .map(async (i, img) => {
         const src = $(img).attr('src');
+        const dataType = $(img).attr('data-type');
         if (!src || !/^https?:\/\//.test(src)) return;
 
-        const newUrl = await downloadAndReplace(src);
+        const newUrl = await downloadAndReplace(src, dataType);
         if (newUrl) $(img).attr('src', newUrl);
       })
       .get();
